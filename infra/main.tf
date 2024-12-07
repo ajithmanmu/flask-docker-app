@@ -1,28 +1,30 @@
 provider "aws" {
-  region = "us-east-2" # Change to your preferred region
+  region = "us-east-2" # Ensure this matches your desired region
 }
 
+# Import or define the existing key pair
 resource "aws_key_pair" "deployer_key" {
-  key_name   = "deployer-key"
-  public_key = file("~/.ssh/id_rsa.pub")
+  key_name   = "deployer-key"                # Name for the key pair in AWS
+  public_key = file("~/.ssh/id_rsa.pub")     # Use your existing public key
 }
 
+# Security group to allow SSH and HTTP traffic
 resource "aws_security_group" "flask_sg" {
   name        = "flask-security-group"
   description = "Allow HTTP and SSH traffic"
 
   ingress {
-    from_port   = 5000
-    to_port     = 5000
+    from_port   = 22                         # SSH
+    to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]              # Adjust to your IP for better security
   }
 
   ingress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 5000                       # Flask app
+    to_port     = 5000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Allow SSH from any IP
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -33,8 +35,9 @@ resource "aws_security_group" "flask_sg" {
   }
 }
 
+# EC2 instance configuration
 resource "aws_instance" "flask_instance" {
-  ami           = "ami-0a91cd140a1fc148a" # Use the correct AMI ID for your region
+  ami           = "ami-0a91cd140a1fc148a"    # Ubuntu AMI for us-east-2
   instance_type = "t2.micro"
   key_name      = aws_key_pair.deployer_key.key_name
   security_groups = [
@@ -43,21 +46,37 @@ resource "aws_instance" "flask_instance" {
 
   connection {
     type        = "ssh"
-    user        = "ec2-user" # Default user for Amazon Linux 2
-    private_key = file("~/.ssh/id_rsa") # Path to your private key
-    host        = self.public_ip
+    user        = "ubuntu"                   # Default user for Ubuntu AMI
+    private_key = file("~/.ssh/id_rsa")      # Path to your private key
+    host        = self.public_ip             # Use the dynamic public IP
+    timeout     = "5m"                       # Increase timeout if needed
   }
 
-  provisioner "remote-exec" {
-    inline = [
-      "sudo yum update -y",
-      "sudo yum install docker -y",
-      "sudo service docker start",
-      "docker run -d -p 5000:5000 flask-docker-app"
-    ]
-  }
+#   provisioner "remote-exec" {
+#     inline = [
+#       "sudo apt-get update -y",             # Update package manager
+#       "sudo apt-get install docker.io -y", # Install Docker
+#       "sudo systemctl start docker",       # Start Docker service
+#       "sudo docker run -d -p 5000:5000 flask-docker-app" # Run your Flask app
+#     ]
+#   }
+provisioner "remote-exec" {
+  inline = [
+    "sudo apt-get update -y",
+    "sudo apt-get install docker.io -y",
+    "sudo systemctl start docker",
+    "sudo docker pull ajithmanmadhangeneral/flask-docker-app:latest",
+    "sudo docker run -d -p 5000:5000 ajithmanmadhangeneral/flask-docker-app:latest"
+  ]
+}
 
   tags = {
     Name = "FlaskApp"
   }
+}
+
+# Output the instance's public IP
+output "flask_app_public_ip" {
+  value       = aws_instance.flask_instance.public_ip
+  description = "Public IP of the Flask application"
 }
